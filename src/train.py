@@ -13,8 +13,8 @@ import eval
 
 MAX_INPUT_LENGTH = 64
 MAX_OUTPUT_LENGTH = 64
-BATCH_SIZE = 32
-MAX_EPOCHS = 100
+BATCH_SIZE = 64
+MAX_EPOCHS = 125
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'mps')
 print(device)
@@ -37,8 +37,10 @@ def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels
         preds += [[labels[index] for index in seq] for seq in decoded_tokens]
         gold += [[labels[index] for index in seq if index >= 0] for seq in batch['labels']]
 
-    print("Preds", preds[:2])
-    print("Gold", gold[:2])
+        preds = [seq[:len(gold[row_index])] for row_index, seq in enumerate(preds)]
+
+    for p, g in zip(preds[:10], gold[:10]):
+        print(f"Pred: {p}\nGold: {g}\n")
 
     metrics = {
         **eval.eval_accuracy(preds, gold),
@@ -50,13 +52,10 @@ def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels
 
 def test(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
     model.eval()
-    print("TESTING")
-
     preds = []
     gold = []
 
     for batch in tqdm(dataloader, desc="Test batch", colour="green"):
-        print(batch["input_ids"].shape)
         tokens = model.generate(input_ids=batch['input_ids'].to(device),
                                 attention_mask=batch['attention_mask'].to(device)).cpu()
         preds += [[labels[index] for index in seq] for seq in tokens]
@@ -113,7 +112,7 @@ def main():
 
     dataset = dataset.map(tokenize, batched=True).select_columns(['input_ids', 'attention_mask', 'labels'])
     collator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
-    dataloader = DataLoader(dataset['train'].select(range(100)), batch_size=BATCH_SIZE, collate_fn=collator)
+    dataloader = DataLoader(dataset['train'], batch_size=BATCH_SIZE, collate_fn=collator)
     eval_dataloader = DataLoader(dataset['eval'], batch_size=BATCH_SIZE, collate_fn=collator)
     test_dataloader = DataLoader(dataset['test'], batch_size=BATCH_SIZE, collate_fn=collator)
 
@@ -124,7 +123,8 @@ def main():
                                        feature_map=[[i] for i in range(len(all_glosses))],
                                        decoder_pad_token_id=PAD_TOKEN_ID,
                                        decoder_max_length=MAX_OUTPUT_LENGTH).to(device)
-    optimizer = torch.optim.AdamW(model.parameters())
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
     # Training loop
     for epoch in tqdm(range(MAX_EPOCHS), desc="Epoch", colour="blue"):
@@ -141,9 +141,11 @@ def main():
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
             losses += loss.item()
 
+        scheduler.step()
         end_time = timer()
         train_loss = losses / len(dataloader)
 
@@ -173,6 +175,7 @@ def main():
             f.write(' '.join(seq) + '\n')
 
     wandb.finish()
+    torch.save(model.state_dict(), "./model.pth")
 
 
 if __name__ == "__main__":

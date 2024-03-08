@@ -192,6 +192,8 @@ class StructuredGlossTransformer(torch.nn.Module):
                and current_generated_tokens.shape[1] < self.decoder_max_length):
             _, decoder_feature_output = self.forward(
                 input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids=current_generated_tokens)
+            # FIXME: this re-decodes the same predicted tokens over and over
+
             new_tokens = self.greedy_decode(decoder_feature_output)
             current_generated_tokens = torch.cat((current_generated_tokens, new_tokens), dim=1)
 
