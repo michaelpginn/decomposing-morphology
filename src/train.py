@@ -14,7 +14,7 @@ import eval
 MAX_INPUT_LENGTH = 64
 MAX_OUTPUT_LENGTH = 64
 BATCH_SIZE = 32
-MAX_EPOCHS = 1
+MAX_EPOCHS = 100
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'mps')
 print(device)
