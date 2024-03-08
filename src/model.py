@@ -92,9 +92,12 @@ class StructuredGlossTransformer(torch.nn.Module):
         if decoder_input_ids is not None:
             # Shift labels right as input to decoder
             # If we hit the max decoder length, we can truncate
-            new_seq_length = min(decoder_input_ids.shape[-1] + 1, self.decoder_max_length)
+            if features is None:
+                new_seq_length = min(decoder_input_ids.shape[-1] + 1, self.decoder_max_length)
+            else:
+                new_seq_length = decoder_input_ids.shape[-1]
             shifted_decoder_input_ids = decoder_input_ids.new_zeros(decoder_input_ids.shape[:-1] + (new_seq_length,))
-            shifted_decoder_input_ids[..., 1:] = decoder_input_ids.clone()
+            shifted_decoder_input_ids[..., 1:] = decoder_input_ids[..., :new_seq_length-1].clone()
             shifted_decoder_input_ids[..., 0] = self.decoder_pad_token_id
             shifted_decoder_input_ids.masked_fill_(shifted_decoder_input_ids == -100, self.decoder_pad_token_id)
         else:
