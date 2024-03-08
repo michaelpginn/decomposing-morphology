@@ -1,0 +1,8 @@
+.ipynb_checkpoints/
+.jupyter/
+.DS_Store
+__pycache__
+src/wandb
+slurm-out/
+training-checkpoints/
+wandb/
