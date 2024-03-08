@@ -20,4 +20,4 @@ module load anaconda
 conda activate AutoIGT
 cd "/projects/migi8081/decomposing-morphology/src"
 
-python3 
+python3 train.py
