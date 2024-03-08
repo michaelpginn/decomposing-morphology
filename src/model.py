@@ -91,8 +91,10 @@ class StructuredGlossTransformer(torch.nn.Module):
 
         if decoder_input_ids is not None:
             # Shift labels right as input to decoder
-            shifted_decoder_input_ids = decoder_input_ids.new_zeros(decoder_input_ids.shape)
-            shifted_decoder_input_ids[..., 1:] = decoder_input_ids[..., :-1].clone()
+            # If we hit the max decoder length, we can truncate
+            new_seq_length = min(decoder_input_ids.shape[-1] + 1, self.decoder_max_length)
+            shifted_decoder_input_ids = decoder_input_ids.new_zeros(decoder_input_ids.shape[:-1] + (new_seq_length,))
+            shifted_decoder_input_ids[..., 1:] = decoder_input_ids.clone()
             shifted_decoder_input_ids[..., 0] = self.decoder_pad_token_id
             shifted_decoder_input_ids.masked_fill_(shifted_decoder_input_ids == -100, self.decoder_pad_token_id)
         else:
@@ -192,9 +194,10 @@ class StructuredGlossTransformer(torch.nn.Module):
                and current_generated_tokens.shape[1] < self.decoder_max_length):
             _, decoder_feature_output = self.forward(
                 input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids=current_generated_tokens)
-            # FIXME: this re-decodes the same predicted tokens over and over
 
             new_tokens = self.greedy_decode(decoder_feature_output)
+            # Just add the last token predictions
+            new_tokens = new_tokens[..., -1:]
             current_generated_tokens = torch.cat((current_generated_tokens, new_tokens), dim=1)
 
         return current_generated_tokens
