@@ -22,5 +22,5 @@ cd "/projects/migi8081/decomposing-morphology/src"
 
 for $seed in 1 2 3 4 5
 do
-  python3 train.py --seed $seed
+  python3 train.py --seed $seed --features_path ../features_v1.csv
 done
