@@ -160,7 +160,7 @@ class StructuredGlossTransformer(torch.nn.Module):
                         for feature_index, feature_value in enumerate(possible_label_features):
                             if feature_index == 0:
                                 continue
-                            label_prob += softmaxed_logits[feature_index - 1][row_index, token_index, feature_value]
+                            label_prob += softmaxed_logits[feature_index][row_index, token_index, feature_value]
 
                         if most_probable_label[0] is None or label_prob > most_probable_label[0]:
                             most_probable_label = (label_prob, possible_label_id)

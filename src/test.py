@@ -10,6 +10,7 @@ from model import StructuredGlossTransformer
 import wandb
 import random
 import eval
+import features
 
 MAX_INPUT_LENGTH = 64
 MAX_OUTPUT_LENGTH = 64
@@ -18,6 +19,37 @@ MAX_EPOCHS = 125
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'mps')
 print(device)
+
+
+def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
+    model.eval()
+    losses = 0
+
+    preds = []
+    gold = []
+
+    for batch in tqdm(dataloader, desc="Eval batch", colour="green"):
+        batch_features = features.map_labels_to_features(batch['labels'], model.feature_map)
+        (loss, feature_logits) = model.forward(input_ids=batch['input_ids'].to(device),
+                                               attention_mask=batch['attention_mask'].to(device),
+                                               decoder_input_ids=batch['labels'].to(device),
+                                               features=batch_features.to(device))
+        losses += loss.item()
+        decoded_tokens = model.greedy_decode(feature_logits=feature_logits).cpu()
+        preds += [[labels[index] for index in seq] for seq in decoded_tokens]
+        gold += [[labels[index] for index in seq if index >= 0] for seq in batch['labels']]
+
+        preds = [seq[:len(gold[row_index])] for row_index, seq in enumerate(preds)]
+
+    for p, g in zip(preds[:10], gold[:10]):
+        print(f"Pred: {p}\nGold: {g}\n")
+
+    metrics = {
+        **eval.eval_accuracy(preds, gold),
+        **eval.bleu(preds, gold)
+    }
+
+    return losses / len(dataloader), metrics
 
 
 def test(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
@@ -71,6 +103,7 @@ def main(seed):
 
     dataset = dataset.map(tokenize, batched=True).select_columns(['input_ids', 'attention_mask', 'labels'])
     collator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
+    eval_dataloader = DataLoader(dataset['eval'], batch_size=BATCH_SIZE, collate_fn=collator)
     test_dataloader = DataLoader(dataset['test'], batch_size=BATCH_SIZE, collate_fn=collator)
 
     # Create the model. For all experiments, the first "feature" is just a unique id for each gloss
@@ -83,13 +116,15 @@ def main(seed):
 
     model.load_state_dict(torch.load("./model.pth", map_location=torch.device('mps')))
 
+    eval_epoch(model, )
+
     # Run final eval on test
-    test_preds, test_metrics = test(model, test_dataloader, all_glosses)
-    print(test_metrics)
-    with open('preds.out', 'w') as f:
-        for seq in test_preds:
-            # Join the strings in the inner list with a space and write to the file
-            f.write(' '.join(seq) + '\n')
+    # test_preds, test_metrics = test(model, test_dataloader, all_glosses)
+    # print(test_metrics)
+    # with open('preds.out', 'w') as f:
+    #     for seq in test_preds:
+    #         # Join the strings in the inner list with a space and write to the file
+    #         f.write(' '.join(seq) + '\n')
 
     wandb.finish()
     torch.save(model.state_dict(), "./model.pth")

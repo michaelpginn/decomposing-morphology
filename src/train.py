@@ -74,7 +74,7 @@ def test(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
     return preds, metrics
 
 
-def main(features_path: Optional[str] = None, seed: int = 0):
+def main(mode: str = 'train', features_path: Optional[str] = None, model_path: Optional[str] = None, seed: int = 0):
     random.seed(seed)
     wandb.init(
         project="decomposing-morphology",
@@ -131,57 +131,67 @@ def main(features_path: Optional[str] = None, seed: int = 0):
                                        feature_map=feature_map,
                                        decoder_pad_token_id=PAD_TOKEN_ID,
                                        decoder_max_length=MAX_OUTPUT_LENGTH).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
-    # Training loop
-    for epoch in tqdm(range(MAX_EPOCHS), desc="Epoch", colour="blue"):
-        start_time = timer()
+    if model_path:
+        model.load_state_dict(torch.load(model_path, map_location=device))
 
-        model.train()
-        losses = 0
+    if mode == 'train':
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
-        for batch in tqdm(dataloader, desc="Batch", colour="green"):
-            batch_features = features.map_labels_to_features(batch['labels'], feature_map)
-            (loss, feature_logits) = model.forward(input_ids=batch['input_ids'].to(device),
-                                                   attention_mask=batch['attention_mask'].to(device),
-                                                   decoder_input_ids=batch['labels'].to(device),
-                                                   features=batch_features.to(device))
+        # Training loop
+        for epoch in tqdm(range(MAX_EPOCHS), desc="Epoch", colour="blue"):
+            start_time = timer()
 
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-            optimizer.step()
-            losses += loss.item()
+            model.train()
+            losses = 0
 
-        scheduler.step()
-        end_time = timer()
-        train_loss = losses / len(dataloader)
+            for batch in tqdm(dataloader, desc="Batch", colour="green"):
+                batch_features = features.map_labels_to_features(batch['labels'], feature_map)
+                (loss, feature_logits) = model.forward(input_ids=batch['input_ids'].to(device),
+                                                       attention_mask=batch['attention_mask'].to(device),
+                                                       decoder_input_ids=batch['labels'].to(device),
+                                                       features=batch_features.to(device))
 
-        # Eval
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                optimizer.step()
+                losses += loss.item()
+
+            scheduler.step()
+            end_time = timer()
+            train_loss = losses / len(dataloader)
+
+            # Eval
+            eval_loss, metrics = eval_epoch(model, eval_dataloader, all_glosses)
+
+            print(
+                (f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Eval loss: {eval_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
+
+            wandb.log({"epoch": epoch,
+                       "train": {
+                           "loss": train_loss
+                       },
+                       "eval": {
+                           "loss": eval_loss,
+                           **metrics
+                       }})
+
+    if mode == 'eval':
         eval_loss, metrics = eval_epoch(model, eval_dataloader, all_glosses)
+        print(metrics)
 
-        print(
-            (f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Eval loss: {eval_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
-
-        wandb.log({"epoch": epoch,
-                   "train": {
-                       "loss": train_loss
-                   },
-                   "eval": {
-                       "loss": eval_loss,
-                       **metrics
-                   }})
-
-    # Run final eval on test
-    test_preds, test_metrics = test(model, test_dataloader, all_glosses)
-    wandb.log({
-        "test": test_metrics
-    })
-    with open('preds.out', 'w') as f:
-        for seq in test_preds:
-            # Join the strings in the inner list with a space and write to the file
-            f.write(' '.join(seq) + '\n')
+    if mode == 'train' or mode == 'test':
+        # Run final eval on test
+        test_preds, test_metrics = test(model, test_dataloader, all_glosses)
+        wandb.log({
+            "test": test_metrics
+        })
+        with open('preds.out', 'w') as f:
+            for seq in test_preds:
+                # Join the strings in the inner list with a space and write to the file
+                f.write(' '.join(seq) + '\n')
 
     wandb.finish()
     torch.save(model.state_dict(), "./model.pth")
