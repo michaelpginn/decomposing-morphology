@@ -74,7 +74,7 @@ class StructuredGlossTransformer(torch.nn.Module):
             input_ids (Optional[torch.LongTensor], optional): Input tensor of shape `(batch_size, seq_length)`.
             attention_mask (Optional[torch.FloatTensor], optional): Attention mask tensor of shape `(batch_size, seq_length)`.
             decoder_input_ids (Optional[torch.LongTensor], optional): Decoder input tensor of shape `(batch_size, seq_length)`. If omitted, will start new output sequence.
-            features (Optional[torch.LongTensor], optional): Feature tensor of shape `(batch_size, num_features, seq_length)`. Used to compute loss for decomposed prediction.
+            features (Optional[torch.LongTensor], optional): Feature tensor of shape `(batch_size, num_features, seq_length)`. Used to compute loss for decomposed prediction. Should be computed by converting the correct label ids using `self.feature_map`.
 
         Returns:
             Tuple[torch.Tensor, List[torch.Tensor]]: A tuple containing the loss tensor and a list of feature logits tensors `(num_features, batch_size, seq_length, feature_size)`.

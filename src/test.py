@@ -71,8 +71,6 @@ def main(seed):
 
     dataset = dataset.map(tokenize, batched=True).select_columns(['input_ids', 'attention_mask', 'labels'])
     collator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
-    dataloader = DataLoader(dataset['train'], batch_size=BATCH_SIZE, collate_fn=collator)
-    eval_dataloader = DataLoader(dataset['eval'], batch_size=BATCH_SIZE, collate_fn=collator)
     test_dataloader = DataLoader(dataset['test'], batch_size=BATCH_SIZE, collate_fn=collator)
 
     # Create the model. For all experiments, the first "feature" is just a unique id for each gloss

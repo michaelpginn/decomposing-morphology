@@ -1,3 +1,4 @@
+from typing import Optional
 import fire
 import datasets
 from transformers import MT5Tokenizer, DataCollatorForSeq2Seq
@@ -6,10 +7,11 @@ import torch
 from torch.utils.data import DataLoader
 from timeit import default_timer as timer
 from tqdm import tqdm
-from model import StructuredGlossTransformer
 import wandb
 import random
+from model import StructuredGlossTransformer
 import eval
+import features
 
 MAX_INPUT_LENGTH = 64
 MAX_OUTPUT_LENGTH = 64
@@ -28,10 +30,11 @@ def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels
     gold = []
 
     for batch in tqdm(dataloader, desc="Eval batch", colour="green"):
+        batch_features = features.map_labels_to_features(batch['labels'], model.feature_map)
         (loss, feature_logits) = model.forward(input_ids=batch['input_ids'].to(device),
                                                attention_mask=batch['attention_mask'].to(device),
                                                decoder_input_ids=batch['labels'].to(device),
-                                               features=batch['labels'].to(device).unsqueeze(-2))
+                                               features=batch_features.to(device))
         losses += loss.item()
         decoded_tokens = model.greedy_decode(feature_logits=feature_logits).cpu()
         preds += [[labels[index] for index in seq] for seq in decoded_tokens]
@@ -71,17 +74,15 @@ def test(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
     return preds, metrics
 
 
-def main():
-    random.seed(0)
+def main(features_path: Optional[str] = None, seed: int = 0):
+    random.seed(seed)
     wandb.init(
-        # set the wandb project where this run will be logged
         project="decomposing-morphology",
-
-        # track hyperparameters and run metadata
         config={
             "batch_size": BATCH_SIZE,
             "max_epochs": MAX_EPOCHS,
-            "experiment": "baseline"
+            "experiment": "baseline" if features_path is None else "structured",
+            "feature_map": features_path
         }
     )
 
@@ -96,6 +97,13 @@ def main():
     SEP_TOKEN_ID = all_glosses.index("<sep>")
     PAD_TOKEN_ID = all_glosses.index("<pad>")
     print(f"{len(all_glosses)} unique glosses")
+
+    # Create a feature map based on a table of glosses x features
+    if features_path:
+        feature_map, feature_lengths = features.create_feature_map(features_path, all_glosses)
+    else:
+        feature_map = [[i] for i in range(len(all_glosses))]
+        feature_lengths = [len(all_glosses)]
 
     def encode_gloss_labels(label_string: str):
         """Encodes glosses as an id sequence. Each morpheme gloss is assigned a unique id."""
@@ -119,8 +127,8 @@ def main():
     # Create the model. For all experiments, the first "feature" is just a unique id for each gloss
     # A trivial "feature map" baseline, with one layer of features (where each option is a unique gloss)
     model = StructuredGlossTransformer(num_glosses=len(all_glosses),
-                                       feature_lengths=[len(all_glosses)],
-                                       feature_map=[[i] for i in range(len(all_glosses))],
+                                       feature_lengths=feature_lengths,
+                                       feature_map=feature_map,
                                        decoder_pad_token_id=PAD_TOKEN_ID,
                                        decoder_max_length=MAX_OUTPUT_LENGTH).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
@@ -134,10 +142,11 @@ def main():
         losses = 0
 
         for batch in tqdm(dataloader, desc="Batch", colour="green"):
+            batch_features = features.map_labels_to_features(batch['labels'], feature_map)
             (loss, feature_logits) = model.forward(input_ids=batch['input_ids'].to(device),
                                                    attention_mask=batch['attention_mask'].to(device),
                                                    decoder_input_ids=batch['labels'].to(device),
-                                                   features=batch['labels'].to(device).unsqueeze(-2))
+                                                   features=batch_features.to(device))
 
             optimizer.zero_grad()
             loss.backward()
