@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 import fire
 import datasets
 from transformers import MT5Tokenizer, DataCollatorForSeq2Seq
@@ -22,7 +22,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'mps')
 print(device)
 
 
-def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
+def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels: List[str], gloss_to_omit: Optional[str]):
     model.eval()
     losses = 0
 
@@ -42,8 +42,15 @@ def eval_epoch(model: StructuredGlossTransformer, dataloader: DataLoader, labels
 
         preds = [seq[:len(gold[row_index])] for row_index, seq in enumerate(preds)]
 
-    for p, g in zip(preds[:10], gold[:10]):
-        print(f"Pred: {p}\nGold: {g}\n")
+    if gloss_to_omit is not None:
+        # Find and display rows with the gloss in question
+        for p, g in zip(preds, gold):
+            if gloss_to_omit in g:
+                print(f"Pred: {p}\nGold: {g}\n")
+    else:
+        # Print the first few
+        for p, g in zip(preds[:10], gold[:10]):
+            print(f"Pred: {p}\nGold: {g}\n")
 
     metrics = {
         **eval.eval_accuracy(preds, gold),
@@ -74,20 +81,35 @@ def test(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
     return preds, metrics
 
 
-def main(mode: str = 'train', features_path: Optional[str] = None, model_path: Optional[str] = None, seed: int = 0):
+def main(mode: str = 'train',
+         features_path: Optional[str] = None,
+         model_path: Optional[str] = None,
+         gloss_to_omit: Optional[str] = None,
+         seed: int = 0):
     random.seed(seed)
+    experiment = "baseline" if features_path is None else "structured",
     wandb.init(
         project="decomposing-morphology",
         config={
             "batch_size": BATCH_SIZE,
             "max_epochs": MAX_EPOCHS,
-            "experiment": "baseline" if features_path is None else "structured",
-            "feature_map": features_path
+            "experiment": experiment,
+            "feature_map": features_path,
+            "held_out_gloss": gloss_to_omit
         }
     )
 
     dataset = datasets.load_dataset("lecslab/usp-igt")
     tokenizer = MT5Tokenizer.from_pretrained("google/mt5-small", legacy=False)
+
+    if gloss_to_omit is not None:
+        # Find all of the rows with that tag in the train set and move to test
+        filtered_rows = dataset['train'].filter(
+            lambda r: gloss_to_omit in r['pos_glosses'].replace('-', ' ').split())
+        dataset['train'] = dataset['train'].filter(
+            lambda r: gloss_to_omit not in r['pos_glosses'].replace('-', ' ').split())
+        dataset['test'] = datasets.concatenate_datasets([dataset['test'], filtered_rows])
+        dataset['eval'] = datasets.concatenate_datasets([dataset['eval'], filtered_rows])
 
     # Collect the unique set of gloss labels
     all_glosses = sorted(set([gloss for glosses in dataset['train']['pos_glosses'] +
@@ -164,7 +186,7 @@ def main(mode: str = 'train', features_path: Optional[str] = None, model_path: O
             train_loss = losses / len(dataloader)
 
             # Eval
-            eval_loss, metrics = eval_epoch(model, eval_dataloader, all_glosses)
+            eval_loss, metrics = eval_epoch(model, eval_dataloader, all_glosses, gloss_to_omit)
 
             print(
                 (f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Eval loss: {eval_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
@@ -188,7 +210,7 @@ def main(mode: str = 'train', features_path: Optional[str] = None, model_path: O
         wandb.log({
             "test": test_metrics
         })
-        with open('preds.out', 'w') as f:
+        with open(f"preds-{experiment}-{seed}-{gloss_to_omit if gloss_to_omit is not None else 'all'}.out", 'w') as f:
             for seq in test_preds:
                 # Join the strings in the inner list with a space and write to the file
                 f.write(' '.join(seq) + '\n')
