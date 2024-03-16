@@ -101,7 +101,7 @@ def main(mode: str = 'train',
         _type_: _description_
     """
     random.seed(seed)
-    experiment = "baseline" if features_path is None else "structured",
+    experiment = "baseline" if features_path is None else "structured"
     wandb.init(
         project="decomposing-morphology",
         config={
