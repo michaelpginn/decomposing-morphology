@@ -29,7 +29,12 @@ cd "/projects/migi8081/decomposing-morphology/src"
 #   done
 # done
 
-for seed in 1 2 3 4 5
+for seed in 1 2 
+do
+  python3 train.py --language ddo --seed $seed --features_path ../ddo_features_v1.csv 
+done
+
+for seed in 3 4 5
 do
   python3 train.py --language ddo --seed $seed 
   python3 train.py --language ddo --seed $seed --features_path ../ddo_features_v1.csv 
