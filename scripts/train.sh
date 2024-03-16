@@ -20,11 +20,17 @@ module load anaconda
 conda activate AutoIGT
 cd "/projects/migi8081/decomposing-morphology/src"
 
-for gloss in A1S A1P A2S E3P E2P E2
+# for gloss in A1S A1P A2S E3P E2P E2
+# do
+#   for seed in 1 2
+#   do
+#     python3 train.py --seed $seed --features_path ../features_v1.csv --gloss_to_omit $gloss
+#     python3 train.py --seed $seed --gloss_to_omit $gloss
+#   done
+# done
+
+for seed in 1 2 3 4 5
 do
-  for seed in 1 2
-  do
-    python3 train.py --seed $seed --features_path ../features_v1.csv --gloss_to_omit $gloss
-    python3 train.py --seed $seed --gloss_to_omit $gloss
-  done
+  python3 train.py --language ddo --seed $seed 
+  python3 train.py --language ddo --seed $seed --features_path ../ddo_features_v1.csv 
 done

@@ -82,10 +82,24 @@ def test(model: StructuredGlossTransformer, dataloader: DataLoader, labels):
 
 
 def main(mode: str = 'train',
+         language: str = 'usp',
          features_path: Optional[str] = None,
          model_path: Optional[str] = None,
          gloss_to_omit: Optional[str] = None,
          seed: int = 0):
+    """Runs the training code
+
+    Args:
+        mode (str, optional): 'train' | 'eval' | 'test'
+        language (str, optional): 'usp' | 'ddo'
+        features_path (Optional[str], optional): Path to features CSV file. If not provided, use baseline model.
+        model_path (Optional[str], optional): Path to trained model `.pth` file, for inference.
+        gloss_to_omit (Optional[str], optional): If provided, omits the specified gloss from the training set.
+        seed (int, optional): Random seed.
+
+    Returns:
+        _type_: _description_
+    """
     random.seed(seed)
     experiment = "baseline" if features_path is None else "structured",
     wandb.init(
@@ -94,12 +108,16 @@ def main(mode: str = 'train',
             "batch_size": BATCH_SIZE,
             "max_epochs": MAX_EPOCHS,
             "experiment": experiment,
+            "language": language,
             "feature_map": features_path,
             "held_out_gloss": gloss_to_omit
         }
     )
 
-    dataset = datasets.load_dataset("lecslab/usp-igt")
+    if language == 'usp':
+        dataset = datasets.load_dataset("lecslab/usp-igt")
+    else:
+        dataset = datasets.load_dataset("lecslab/ddo-igt", download_mode="force_redownload")
     tokenizer = MT5Tokenizer.from_pretrained("google/mt5-small", legacy=False)
 
     if gloss_to_omit is not None:

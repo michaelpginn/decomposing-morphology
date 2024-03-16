@@ -18,7 +18,10 @@ def create_feature_map(path: str, glosses: List[str]) -> Tuple[List[List[int]], 
     assert 'Gloss' in features.columns
 
     def _map_gloss(gloss: str) -> list[int]:
-        return features[features['Gloss'] == gloss].values[0][1:].tolist()
+        try:
+            return features[features['Gloss'] == gloss].values[0][1:].tolist()
+        except:
+            print(gloss)
     feature_map = list(map(_map_gloss, glosses))
 
     # Compute the number of distinct labels in each feature column
